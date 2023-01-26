@@ -79,8 +79,6 @@ public abstract class RDB2RDFTestBase {
 
 	private static String LAST_SQL_SCRIPT = null;
 
-	private Connection SQL_CONN;
-
 	private static final ValueFactory FACTORY = SimpleValueFactory.getInstance();
 
 	protected final Properties PROPERTIES;
@@ -91,6 +89,8 @@ public abstract class RDB2RDFTestBase {
 	 */
 	private static class TestVocabulary  {
 		public static final String NS = "http://purl.org/NET/rdb2rdf-test#";
+		
+	    public static final String DC = "http://purl.org/dc/elements/1.1/";
 
 		public static final IRI SQL_SCRIPT_FILE = FACTORY.createIRI(NS, "sqlScriptFile");
 
@@ -101,6 +101,8 @@ public abstract class RDB2RDFTestBase {
 		public static final IRI MAPPING_DOCUMENT = FACTORY.createIRI(NS, "mappingDocument");
 
 		public static final IRI OUTPUT = FACTORY.createIRI(NS, "output");
+		
+	    public static final IRI TITLE = FACTORY.createIRI(DC, "title");
 	}
 
 	protected static class DbSettings {
@@ -132,6 +134,7 @@ public abstract class RDB2RDFTestBase {
 			// manifest files are ordered in a certain way (otherwise we'll get an explicit error)
             RDFHandler manifestHandler = new AbstractRDFHandler() {
 				String name;
+				String title;
 				String sqlFile;
 				String mappingFile;
 				String outputFile;
@@ -164,6 +167,9 @@ public abstract class RDB2RDFTestBase {
 						// record the output file
 						outputFile = dir + st.getObject().stringValue();
 					}
+					else if (pred.equals(TestVocabulary.TITLE)) {
+					    title = st.getObject().stringValue();
+					}
 				}
 
 				@Override
@@ -180,7 +186,7 @@ public abstract class RDB2RDFTestBase {
 							// only include tests if they are not present in excludeTests (or excludeTests is empty)
 							if (excludeTests == null || excludeTests.isEmpty() || !excludeTests.contains(name)) {
 								Preconditions.checkState(sqlFile != null, "SQL file not defined");
-								params.add(new Object[] { name, sqlFile, mappingFile, outputFile });
+								params.add(new Object[] { name, title, sqlFile, mappingFile, outputFile });
 							} else {
 								IGNORED.add(name);
 							}
@@ -210,11 +216,13 @@ public abstract class RDB2RDFTestBase {
 	protected final String mappingFile;
 	protected final String outputFile;
 	protected final String name;
+	protected final String title;
 	protected final DbSettings dbSettings;
 	static final Logger logger = LoggerFactory.getLogger(RDB2RDFTestBase.class);
 	
-	public RDB2RDFTestBase(String name, String sqlFile, String mappingFile, String outputFile, DbSettings dbSettings) {
+	public RDB2RDFTestBase(String name, String title, String sqlFile, String mappingFile, String outputFile, DbSettings dbSettings) {
 		this.name = name;
+		this.title = title;
 		this.sqlFile = sqlFile;
 		this.mappingFile = mappingFile;
 		this.outputFile =  outputFile;
@@ -229,15 +237,13 @@ public abstract class RDB2RDFTestBase {
 	}
 	
 	protected Connection getConnection() throws SQLException {
-		if (SQL_CONN == null || SQL_CONN.isClosed()) {
-			SQL_CONN = DriverManager.getConnection(dbSettings.url, dbSettings.user, dbSettings.password);
-		}
-		return SQL_CONN;
+		return DriverManager.getConnection(dbSettings.url, dbSettings.user, dbSettings.password);
 	};
 	
 	
 	@Before
 	public void beforeTest() throws Exception {
+		logger.info("Initialize "+name+ " - "+title);
 		// Several tests use the same backing database so no need to recreate the database if the previous test already did so
 		if (Objects.equal(LAST_SQL_SCRIPT, sqlFile)) {
 			return;
@@ -250,18 +256,20 @@ public abstract class RDB2RDFTestBase {
 
 		LAST_SQL_SCRIPT = sqlFile;
 
-		Connection connection = getConnection();
-        try (java.sql.Statement s = connection.createStatement()) {
+        try (java.sql.Connection c = getConnection();
+        	java.sql.Statement s = c.createStatement()) {
             String text = Resources.toString(url(sqlFile), Charsets.UTF_8);
+            logger.debug(name+" CreateDB\r\n"+text);
             s.execute(text);
         } catch (SQLException sqle) {
-            System.out.println("Exception in creating db from script: "+sqle.getLocalizedMessage());
+        	sqle.printStackTrace();
         	LAST_SQL_SCRIPT = null;
+            fail(name+": Exception in creating db from script: "+sqle.getLocalizedMessage());
         }
 	}
 
 	protected Repository createRepository() throws Exception {
-		logger.info("RDB2RDFTest " + name + " " + mappingFile);
+		logger.info("createRepository " + name + " " + mappingFile);
 
 		OntopSQLOWLAPIConfiguration configuration;
 		if (mappingFile != null) {
@@ -334,7 +342,7 @@ public abstract class RDB2RDFTestBase {
 	@Test
 	public void runTest() throws Exception {
 //		assumeTrue(!IGNORE.contains(name));
-
+		logger.info("runTest " + name + " - " + title);
 		try {
  			runTestWithoutIgnores();
  			SUCCESS.add(name);
@@ -366,6 +374,7 @@ public abstract class RDB2RDFTestBase {
 
 		try (RepositoryConnection con = dataRep.getConnection()) {
 			String tripleQuery = "CONSTRUCT {?s ?p ?o} WHERE {?s ?p ?o}";
+			logger.debug("tripleQuery " + name + " - " + tripleQuery);
 			GraphQuery gquery = con.prepareGraphQuery(QueryLanguage.SPARQL, tripleQuery);
 			Set<Statement> triples = QueryResults.asSet(gquery.evaluate());
 
@@ -378,6 +387,7 @@ public abstract class RDB2RDFTestBase {
 					.collect(ImmutableCollectors.toSet());
 
 			String quadQuery = "CONSTRUCT {?s ?p ?o} WHERE { GRAPH ?g {?s ?p ?o} }";
+			logger.debug("quadQuery " + name + " - " + quadQuery);
 			Set<Statement> actual = new HashSet<>(triples);
 			for (Resource namedGraph : namedGraphs) {
 				GraphQuery query = con.prepareGraphQuery(quadQuery);
@@ -403,10 +413,11 @@ public abstract class RDB2RDFTestBase {
 			if (e.getCause() != null && e.getCause() instanceof OntopResultConversionException) {
 				if (outputExpected) {
 					e.printStackTrace();
-					fail("Unexpected result conversion exception: " + e.getMessage());
+					fail(name+": Unexpected result conversion exception: " + e.getMessage());
 				}
 			}
 			else {
+				e.printStackTrace();
 				fail(name+": Unexpected exception: " + e.getMessage());
 			}
 		}

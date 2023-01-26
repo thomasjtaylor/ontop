@@ -76,8 +76,8 @@ public class RDB2RDFTestPostgres extends RDB2RDFTestBase {
 		return RDB2RDFTestBase.parameters(ONLY, IGNORE);
 	}
 	
-	public RDB2RDFTestPostgres(String name, String sqlFile, String mappingFile, String outputFile) throws FileNotFoundException {
-		super(name, sqlFile, mappingFile, outputFile, dbSettings);
+	public RDB2RDFTestPostgres(String name, String title, String sqlFile, String mappingFile, String outputFile) throws FileNotFoundException {
+		super(name, title, sqlFile, mappingFile, outputFile, dbSettings);
 	}
 
 	@BeforeClass

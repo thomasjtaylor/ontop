@@ -66,8 +66,8 @@ public class RDB2RDFTestH2 extends RDB2RDFTestBase {
 		return RDB2RDFTestBase.parameters(ONLY, IGNORE);
 	}
 	
-	public RDB2RDFTestH2(String name, String sqlFile, String mappingFile, String outputFile) throws FileNotFoundException {
-		super(name, sqlFile, mappingFile, outputFile, dbSettings);
+	public RDB2RDFTestH2(String name, String title, String sqlFile, String mappingFile, String outputFile) throws FileNotFoundException {
+		super(name, title, sqlFile, mappingFile, outputFile, dbSettings);
 	}
 
 
