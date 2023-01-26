@@ -17,6 +17,8 @@ release.properties
 .pydevproject
 bin
 .settings
+.eclipse
+.metadata
 
 # Intellij generated files
 *.iml
