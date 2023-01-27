@@ -8,12 +8,20 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 /**
- * Test suite for RDB2RDF tests. Updated for H2 database.
+ * Test suite for RDB2RDF tests. Updated for H2 database. Execution of this class should match the original {@link RDB2RDFTest}.
+ * 
+ * <h2>Test Failures (ontop:5.0.1SNAPSHOT, 2023-01-27)
+ * <li>dg0005-modified: Failed Test: expected!=actual. expected repeated row, excluded in actual
+ * <li>dg0012-modified: Failed Test: expected!=actual. expected repeated row, excluded in actual
  * 
  * @author Thomas J. Taylor (mail@thomasjtaylor.com)
  */
 @RunWith(Parameterized.class)
 public class RDB2RDFTestH2 extends RDB2RDFTestBase {
+	/**
+	 * Only run the following tests. Skip others.
+	 */
+	private static final Set<String> ONLY = Set.of();//"dg0011","dg0014","dg0021","dg022","dg0023","dg0024","dg0025");
 	/**
 	 * Following tests are failing due to various different reasons and bugs and are excluded manually.
 	 */
@@ -22,17 +30,12 @@ public class RDB2RDFTestH2 extends RDB2RDFTestBase {
 			"tc0003a",
 			// Limitation of bnode isomorphism detection + xsd:double encoding (engineering notation was expected)
 			"dg0005",
-			// Limitation of bnode isomorphism detection
-			"dg0005-modified",
-			// Different XSD.DOUBLE lexical form; was expecting the engineering notation. Modified version added.
 			"tc0005a",
 			// Different XSD.DOUBLE lexical form; was expecting the engineering notation. Modified version added.
 			"tc0005b",
-			// Modified (different XSD.DOUBLE lexical form)
+//			// Direct mapping and bnodes: row unique ids are not considered, leadinq to incomplete results
+//			// (e.g. Bob-London should appear twice). TODO: fix it
 			"dg0012",
-			// Direct mapping and bnodes: row unique ids are not considered, leadinq to incomplete results
-			// (e.g. Bob-London should appear twice). TODO: fix it
-			"dg0012-modified",
 			// Modified (different XSD.DOUBLE lexical form)
 			"tc0012a",
 			// Modified (different XSD.DOUBLE lexical form)
@@ -50,13 +53,15 @@ public class RDB2RDFTestH2 extends RDB2RDFTestBase {
 			// Should create an IRI based on a column and the base IRI. TODO: support the base IRI in R2RML
 			"tc0019a"
 	);
-	/**
-	 * Only run the following tests. Skip others.
-	 */
-	private static final Set<String> ONLY = Set.of();//"dg0011","dg0014","dg0021","dg022","dg0023","dg0024","dg0025");
 
-	private static final DbSettings dbSettings = new DbSettings("org.h2.Driver",
-			"jdbc:h2:mem:Rdb2RdfTest", "sa", "");
+	private static final DbSettings dbSettings = new DbSettings(
+			"h2",
+			"org.h2.Driver",
+			"jdbc:h2:mem:RDB2RDFTEST;DB_CLOSE_DELAY=-1",
+			"sa", 
+			"", 
+			"RDB2RDFTEST", 
+			"PUBLIC");
 	
 	/**
 	 * Returns the list of parameters created automatically from RDB2RDF manifest files

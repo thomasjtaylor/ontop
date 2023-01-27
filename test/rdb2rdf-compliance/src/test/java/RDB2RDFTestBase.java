@@ -256,10 +256,11 @@ public abstract class RDB2RDFTestBase {
 		this.outputFile =  outputFile;
 		this.db = dbSettings;
 		PROPERTIES = new Properties();
-		PROPERTIES.setProperty(OntopSQLCredentialSettings.JDBC_USER, dbSettings.user);
-		PROPERTIES.setProperty(OntopSQLCredentialSettings.JDBC_PASSWORD, dbSettings.password);
-		PROPERTIES.setProperty(OntopSQLCoreSettings.JDBC_URL, dbSettings.url);
-		PROPERTIES.setProperty(OntopSQLCoreSettings.JDBC_DRIVER, dbSettings.driver);		
+		PROPERTIES.setProperty(OntopSQLCredentialSettings.JDBC_USER, db.user);
+		PROPERTIES.setProperty(OntopSQLCredentialSettings.JDBC_PASSWORD, db.password);
+		PROPERTIES.setProperty(OntopSQLCoreSettings.JDBC_URL, db.url);
+		PROPERTIES.setProperty(OntopSQLCoreSettings.JDBC_DRIVER, db.driver);
+		PROPERTIES.setProperty("jdbc.name", db.schema); // XXX Oracle?
 		PROPERTIES.setProperty(OntopMappingSettings.BASE_IRI, BASE_IRI);
 		PROPERTIES.setProperty(OntopOBDASettings.ALLOW_RETRIEVING_BLACK_BOX_VIEW_METADATA_FROM_DB, "true");
 	}
@@ -289,7 +290,14 @@ public abstract class RDB2RDFTestBase {
         	java.sql.Statement s = c.createStatement()) {
             String text = Resources.toString(url(sqlFile), Charsets.UTF_8);
             logger.debug(name+" CreateDB\r\n"+text);
-            s.execute(text);
+            if (db.dbkey.equals("oracle")) {
+            	for (String line: text.split(";\\s*\\r?\\n")) {
+            		logger.debug(line);
+            		s.execute(line);
+            	}
+            } else {
+            	s.execute(text);
+            }
             if (logger.isDebugEnabled()) {
             	logDatabase(logger.isDebugEnabled());
             }
@@ -302,6 +310,15 @@ public abstract class RDB2RDFTestBase {
 		
 	protected void logDatabase(boolean includeData) {
 		try (Connection c = getConnection()) {
+//			ResultSet rx = c.getMetaData().getCatalogs();
+//			while (rx.next()) {
+//				System.out.println(rx.getString("TABLE_CAT"));
+//			}
+//			rx = c.getMetaData().getSchemas();
+//			while (rx.next()) {
+//				System.out.println(rx.getString("TABLE_SCHEM"));
+//				System.out.println(rx.getString("TABLE_CATALOG"));
+//			}
 			ResultSet rs = c.getMetaData().getTables(db.database, db.schema, null, new String[] { "TABLE" });
 		    while (rs.next()) {
 		    	String tableName = rs.getString("TABLE_NAME");
@@ -317,7 +334,7 @@ public abstract class RDB2RDFTestBase {
 		        sb.append("\r\n");
 		        if (includeData) {
 		        	java.sql.Statement s = c.createStatement();
-		        	rs2 = s.executeQuery("SELECT * FROM "+tableName);
+		        	rs2 = s.executeQuery("SELECT * FROM \""+tableName+"\"");
 			        while (rs2.next()) {
 			        	for (int columnCount = rs2.getMetaData().getColumnCount(), colnum = 1; colnum <= columnCount; colnum++) {
 			        		sb.append(rs2.getString(colnum)).append(",");	
