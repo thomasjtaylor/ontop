@@ -21,6 +21,7 @@
 import com.google.common.base.Charsets;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.io.Resources;
@@ -56,6 +57,7 @@ import java.io.*;
 import java.net.URL;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
 
@@ -106,15 +108,24 @@ public abstract class RDB2RDFTestBase {
 	}
 
 	protected static class DbSettings {
+		public final String dbkey;
 		public final String url;
 		public final String driver;
 		public final String user;
 		public final String password;
+		public final String database;
+		public final String schema;
 		public DbSettings(String driver, String url, String user, String password) {
+			this(null, driver, url, user, password, null, null);
+		}
+		public DbSettings(String dbkey, String driver, String url, String user, String password, String database, String schema) {
+			this.dbkey = Strings.nullToEmpty(dbkey);
 			this.driver = driver;
 			this.url = url;
 			this.user = user;
 			this.password = password;
+			this.database = Strings.emptyToNull(database);
+			this.schema = Strings.emptyToNull(schema);
 		}
 	}
 	/**
@@ -198,18 +209,35 @@ public abstract class RDB2RDFTestBase {
 			// parse the manifest file
 			RDFParser parser = Rio.createParser(RDFFormat.TURTLE);
 			parser.setRDFHandler(manifestHandler);
-			parser.parse(stream(manifest), TestVocabulary.NS);
+			parser.parse(RDB2RDFTestBase.class.getResourceAsStream(manifest), TestVocabulary.NS);
 		}
 
 		return params;
 	}
 
-	private static URL url(String path)  {
+	private URL url(String path)  {
+		if (!db.dbkey.isEmpty()) {
+			int where = path.lastIndexOf(".");
+		    String result = path.substring(0, where) + "-" + db.dbkey + path.substring(where);
+		    URL url = RDB2RDFTestBase.class.getResource(result);
+		    if (url!=null) {
+		    	logger.info(name+ ": DB-Specific: "+result);
+		    	return url;
+		    }
+		}		
 		return path == null ? null : RDB2RDFTestBase.class.getResource(path);
 	}
 
-	private static InputStream stream(String path) {
-		return RDB2RDFTestBase.class.getResourceAsStream(path);
+	private InputStream stream(String path) {
+		URL url = url(path);
+		if (url!=null) {
+			try {
+				return url.openStream();
+			} catch (IOException ioe) {
+				// ignore
+			}
+		}
+		return null;
 	}
 
 	protected final String sqlFile;
@@ -217,7 +245,7 @@ public abstract class RDB2RDFTestBase {
 	protected final String outputFile;
 	protected final String name;
 	protected final String title;
-	protected final DbSettings dbSettings;
+	protected final DbSettings db;
 	static final Logger logger = LoggerFactory.getLogger(RDB2RDFTestBase.class);
 	
 	public RDB2RDFTestBase(String name, String title, String sqlFile, String mappingFile, String outputFile, DbSettings dbSettings) {
@@ -226,7 +254,7 @@ public abstract class RDB2RDFTestBase {
 		this.sqlFile = sqlFile;
 		this.mappingFile = mappingFile;
 		this.outputFile =  outputFile;
-		this.dbSettings = dbSettings;
+		this.db = dbSettings;
 		PROPERTIES = new Properties();
 		PROPERTIES.setProperty(OntopSQLCredentialSettings.JDBC_USER, dbSettings.user);
 		PROPERTIES.setProperty(OntopSQLCredentialSettings.JDBC_PASSWORD, dbSettings.password);
@@ -237,9 +265,10 @@ public abstract class RDB2RDFTestBase {
 	}
 	
 	protected Connection getConnection() throws SQLException {
-		return DriverManager.getConnection(dbSettings.url, dbSettings.user, dbSettings.password);
+		return DriverManager.getConnection(db.url, db.user, db.password);
 	};
 	
+	 
 	
 	@Before
 	public void beforeTest() throws Exception {
@@ -255,18 +284,57 @@ public abstract class RDB2RDFTestBase {
 		}
 
 		LAST_SQL_SCRIPT = sqlFile;
-
+		
         try (java.sql.Connection c = getConnection();
         	java.sql.Statement s = c.createStatement()) {
             String text = Resources.toString(url(sqlFile), Charsets.UTF_8);
             logger.debug(name+" CreateDB\r\n"+text);
             s.execute(text);
+            if (logger.isDebugEnabled()) {
+            	logDatabase(logger.isDebugEnabled());
+            }
         } catch (SQLException sqle) {
         	sqle.printStackTrace();
         	LAST_SQL_SCRIPT = null;
             fail(name+": Exception in creating db from script: "+sqle.getLocalizedMessage());
         }
 	}
+		
+	protected void logDatabase(boolean includeData) {
+		try (Connection c = getConnection()) {
+			ResultSet rs = c.getMetaData().getTables(db.database, db.schema, null, new String[] { "TABLE" });
+		    while (rs.next()) {
+		    	String tableName = rs.getString("TABLE_NAME");
+		    	StringBuilder sb = new StringBuilder("TABLE ").append(tableName).append("\r\n");
+		        ResultSet rs2 = c.getMetaData().getColumns(db.database, db.schema, tableName, null);
+		        while (rs2.next()) {
+		        	String columnName = rs2.getString("COLUMN_NAME");
+		        	String columnType = rs2.getString("TYPE_NAME");
+		        	sb.append(columnName).append(" (").append(columnType).append("),");
+		        }
+		        rs2.close();
+		        sb.setLength(sb.length()-1);
+		        sb.append("\r\n");
+		        if (includeData) {
+		        	java.sql.Statement s = c.createStatement();
+		        	rs2 = s.executeQuery("SELECT * FROM "+tableName);
+			        while (rs2.next()) {
+			        	for (int columnCount = rs2.getMetaData().getColumnCount(), colnum = 1; colnum <= columnCount; colnum++) {
+			        		sb.append(rs2.getString(colnum)).append(",");	
+			        	}
+			        	sb.setLength(sb.length()-1);
+				        sb.append("\r\n");
+			        }
+			        rs2.close();
+		        }
+			    logger.debug(name+": Database Information\r\n"+sb.toString());
+		    }
+		} catch (SQLException sqle) {
+			logger.warn(name+": "+sqle);
+		}
+	  }
+
+	
 
 	protected Repository createRepository() throws Exception {
 		logger.info("createRepository " + name + " " + mappingFile);
@@ -297,10 +365,10 @@ public abstract class RDB2RDFTestBase {
 
 	Builder<? extends Builder<?>> createInMemoryBuilder() {
 		return createStandardConfigurationBuilder()
-				.jdbcUrl(dbSettings.url)
-				.jdbcDriver(dbSettings.driver)
-				.jdbcUser(dbSettings.user)
-				.jdbcPassword(dbSettings.password)
+				.jdbcUrl(db.url)
+				.jdbcDriver(db.driver)
+				.jdbcUser(db.user)
+				.jdbcPassword(db.password)
 				.enableDefaultDatatypeInference(true)
 				.enableTestMode();
 	}
@@ -401,7 +469,8 @@ public abstract class RDB2RDFTestBase {
 			if (outputExpected) {
 				expected = Rio.parse(stream(outputFile), BASE_IRI, Rio.getParserFormatForFileName(outputFile).get());
 			}
-
+			String msgx = failureMessage(expected, actual);
+			System.out.println(msgx);
 			if (!Models.isomorphic(expected, actual)) {
 				String msg = failureMessage(expected, actual);
 				System.out.println(msg);

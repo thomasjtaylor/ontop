@@ -18,6 +18,19 @@ import org.junit.runners.Parameterized;
  * <p>Consider using mssql for better performance.
  * <p><code>docker run --rm --name ontop-sqlserver -p 1533:1433 -e "ACCEPT_EULA=Y" -e "SA_PASSWORD=Mssql1.0" mcr.microsoft.com/mssql/server:2022-latest</code>
  * 
+ * 
+ * <h2>Failing Tests (ontop:5.0.1-SNAPSHOT, 2023-01-27)</h2>
+ * <li>tc0009c: Error creating repository: it.unibz.inf.ontop.exception.MappingIOException: it.unibz.inf.ontop.exception.MetadataExtractionException: Cannot extract metadata for a black-box view.
+ * <li>dg0012-modified: Failed Test: expected != actual. row unique ids are not considered (results should repeat but do not)
+ * <li>tc0014b: Error creating repository: it.unibz.inf.ontop.exception.MetaMappingExpansionException: com.microsoft.sqlserver.jdbc.SQLServerException: Conversion failed when converting the varchar value 'http://example.com/emp/' to data type int.
+ * <li>tc0014c: Unexpected exception: it.unibz.inf.ontop.exception.OntopConnectionException: com.microsoft.sqlserver.jdbc.SQLServerException: Conversion failed when converting the varchar value 'http://example.com/emp/job/CLERK' to data type int.
+ * <li>dg0016: Failed Test: expected != actual. varbinary data appears to be converted to UTF-8 string ("89504E4..." -> "傉䝎਍ਚ...")
+ * <br>Note: tc0016e PASSES (VARBINARY/hexBinary only results), why does dg0016 FAIL w/ wrong varbinary result?
+ * <li>dg0017: Failed Test: expected != actual. UTF-8 characters for generated URIs are replaced with '?'<br>
+ * <pre>{@code
+ * expected: <http://example.com/base/植物/名=しそ;使用部=葉> <http://example.com/base/植物#使用部> "葉" .
+ *   actual: <http://example.com/base/植物/名=しそ;使用部=葉> <http://example.com/base/??#???> "葉" .
+ * }</pre>
  * @author Thomas J. Taylor (mail@thomasjtaylor.com)
  */
 @RunWith(Parameterized.class)
@@ -26,40 +39,31 @@ public class RDB2RDFTestMSSQL extends RDB2RDFTestBase {
 	 * Only run the following tests. Skip others.
 	 */
 	private static final Set<String> ONLY = Set.of(
-//			"dg0017" // failing due to unicode/utf8 problem
 			);
 	/**
 	 * Following tests are failing due to various different reasons and bugs and are excluded manually.
 	 */
 	protected static final Set<String> IGNORE = Set.of(
-			"tc0002f", // expected:empty, actual:data
+			// expected:empty, actual:data
+			"tc0002f", 
 			// Should reject an undefined SQL version
 			"tc0003a",
 			// Limitation of bnode isomorphism detection + xsd:double encoding (engineering notation was expected)
 			"dg0005",
-			// Limitation of bnode isomorphism detection, double encoding (expected:30.0, actual:30)
-			"dg0005-modified",
 			// Different XSD.DOUBLE lexical form; was expecting the engineering notation. Modified version added.
 			"tc0005a",
-			// Modified for H2, not MSSQL
-			"tc0005a-modified",
 			// Different XSD.DOUBLE lexical form; was expecting the engineering notation. Modified version added.
 			"tc0005b",
-			"tc0005b-modified",
-			// Modified (different XSD.DOUBLE lexical form)
-			"dg0012",
 			// Direct mapping and bnodes: row unique ids are not considered, leadinq to incomplete results
 			// (e.g. Bob-London should appear twice). TODO: fix it
-			"dg0012-modified",
+			"dg0012",
 			// Modified (different XSD.DOUBLE lexical form)
 			"tc0012a",
-			"tc0012a-modified",
 			// Modified (different XSD.DOUBLE lexical form)
 			"tc0012e", // double
-			"tc0012e-modified", // double
-//			"dg0016", // XXX create.sql varbinary insert fails 
-//			"tc0016b", // double
-//			"tc0016c", // dateTime actual includes +00:00 offset
+			// double (may also be problem with PNG hexBinary (see javadocs), tc0016c
+			"dg0016", 
+			"tc0016b", // double
 			// Should create an IRI based on a column and the base IRI. TODO: support the base IRI in R2RML
 			"tc0019a"
 	);
@@ -69,10 +73,13 @@ public class RDB2RDFTestMSSQL extends RDB2RDFTestBase {
 	 * <li>URL: "jdbc:sqlserver://localhost:1533;database=RDB2RDFTest;trustServerCertificate=true"
 	 */
 	private static final DbSettings dbSettings = new DbSettings(
+			"mssql",
 			"com.microsoft.sqlserver.jdbc.SQLServerDriver",
-			"jdbc:sqlserver://localhost:1533;database=RDB2RDFTest;trustServerCertificate=true;useUnicode=true;characterEncoding=UTF-8", 
+			"jdbc:sqlserver://localhost:1533;database=RDB2RDFTest;trustServerCertificate=true",
 			"SA", 
-			"Mssql1.0");
+			"Mssql1.0",
+			"RDB2RDFTest",
+			"dbo");
 	
 	/**
 	 * Returns the list of parameters created automatically from RDB2RDF manifest files
@@ -91,13 +98,12 @@ public class RDB2RDFTestMSSQL extends RDB2RDFTestBase {
 		dropDB();
 		createDB();
 	}
-	
+		
 	/** connect to the mssql database to create the Rdb2RdfTest schema */
 	public static void createDB() {
-		String database = "RDB2RDFTest";
-		try (Connection c = DriverManager.getConnection(dbSettings.url.replace(";database="+database, ""), dbSettings.user, dbSettings.password);
+		try (Connection c = DriverManager.getConnection(dbSettings.url.replace(";database="+dbSettings.database, ""), dbSettings.user, dbSettings.password);
 				Statement s = c.createStatement()) {
-			s.execute("CREATE DATABASE \"" + database + "\"");
+			s.execute("CREATE DATABASE \"" + dbSettings.database + "\"");
 		} catch (SQLException sqle) {
 			System.out.println(sqle);
 		}
@@ -105,12 +111,11 @@ public class RDB2RDFTestMSSQL extends RDB2RDFTestBase {
 	
 	/** connect to the mssql database to drop the Rdb2RdfTest schema */
 	protected static void dropDB() {
-		String database = "RDB2RDFTest";
-		try (Connection c = DriverManager.getConnection(dbSettings.url.replace(";database="+database, ""), dbSettings.user,	dbSettings.password); 
-				Statement s = c.createStatement();) {
+		try (Connection c = DriverManager.getConnection(dbSettings.url.replace(";database="+dbSettings.database, ""), dbSettings.user,	dbSettings.password); 
+				Statement s = c.createStatement()) {
 
-			s.execute("ALTER DATABASE \"" + database + "\" SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "
-					+ "DROP DATABASE \"" + database + "\"");
+			s.execute("ALTER DATABASE \"" + dbSettings.database + "\" SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "
+					+ "DROP DATABASE \"" + dbSettings.database + "\"");
 		} catch (SQLException sqle) {
 			System.out.println(sqle);
 		}
@@ -125,7 +130,7 @@ public class RDB2RDFTestMSSQL extends RDB2RDFTestBase {
 	@AfterClass
 	public static void afterClass() throws Exception {
 		RDB2RDFTestBase.afterClass();
-		dropDB();
+//		dropDB();
 	}
 
 }
