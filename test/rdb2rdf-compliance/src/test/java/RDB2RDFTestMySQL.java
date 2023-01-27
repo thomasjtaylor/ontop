@@ -14,7 +14,18 @@ import org.junit.runners.Parameterized;
  * <p>Hard-coded to connect to Ontop's ontop-mysql database on port 3694. 
  * <p><code>docker run --name ontop_mysql_running -p 3694:3306 -e MYSQL_ROOT_PASSWORD=mysql -d ontop/ontop-mysql</code>
  * <p>Consider using mysql for better performance.
- * <p><code>docker run --name ontop-mysql -p 3694:3306 -e MYSQL_ROOT_PASSWORD=mysql -d mysql:5</code>
+ * <p><code>docker run --rm --name ontop-mysql -p 3694:3306 -e MYSQL_ROOT_PASSWORD=mysql mysql:5</code>
+ * 
+ * <h2>Test Failures (ontop:5.0.1-SNAPSHOT, 2023-01-27)</h2>
+ * <li>tc0002d: Error creating repository: java.lang.UnsupportedOperationException: Not supported by MySQL
+ * <li>tc0003b: Error creating repository: java.lang.UnsupportedOperationException: Not supported by MySQL
+ * <li>dg0012-modified: Failed Test: expected != actual. expected repeat nodes (Bob,Smith,30; Bob,Smith,London) only occurs once in actual
+ * <li>dg0014: Failed Test: expected != actual.
+ * <pre>{@code
+ * missing expected: <http://example.com/base/EMP/empno=7369> <http://example.com/base/EMP#ref-deptno> _:genid2d78245a7f3d6e4a7da8caf0dc446b080b4132dc . }</pre>
+ * <li>tc0014a: Error creating repository: java.lang.UnsupportedOperationException: Not supported by MySQL
+ * <li>tc0014b: Error creating repository: java.lang.UnsupportedOperationException: Not supported by MySQL
+ * <li>tc0014c: Error creating repository: java.lang.UnsupportedOperationException: Not supported by MySQL
  * @author Thomas J. Taylor (mail@thomasjtaylor.com)
  */
 @RunWith(Parameterized.class)
@@ -39,26 +50,16 @@ public class RDB2RDFTestMySQL extends RDB2RDFTestBase {
 			"tc0003a",
 			// Limitation of bnode isomorphism detection + xsd:double encoding (engineering notation was expected)
 			"dg0005",
-			// Limitation of bnode isomorphism detection
-			"dg0005-modified",
 			// Different XSD.DOUBLE lexical form; was expecting the engineering notation. Modified version added.
 			"tc0005a",
-			// Modified for H2, not MySQL
-			"tc0005a-modified",
 			// Different XSD.DOUBLE lexical form; was expecting the engineering notation. Modified version added.
 			"tc0005b",
-			"tc0005b-modified",
-			// Modified (different XSD.DOUBLE lexical form)
-			"dg0012",
 			// Direct mapping and bnodes: row unique ids are not considered, leadinq to incomplete results
 			// (e.g. Bob-London should appear twice). TODO: fix it
-			"dg0012-modified",
+			"dg0012",
 			// Modified (different XSD.DOUBLE lexical form)
 			"tc0012a",
-			"tc0012a-modified",
-			// Modified (different XSD.DOUBLE lexical form)
 			"tc0012e", // double
-			"tc0012e-modified", // double
 			"dg0016", // double
 			"tc0016b", // double
 			"tc0016c", // dateTime actual includes +00:00 offset
@@ -77,10 +78,13 @@ public class RDB2RDFTestMySQL extends RDB2RDFTestBase {
 	 * <li>- nullDatabaseMeansCurrent=true - since mysql:8 default 'false' (mysql:5 was 'true') 
 	 */
 	private static final DbSettings dbSettings = new DbSettings(
+			"mysql",
 			"com.mysql.cj.jdbc.Driver",
 			"jdbc:mysql://:3694/Rdb2RdfTest?characterEncoding=utf8&sessionVariables=sql_mode='ANSI,PAD_CHAR_TO_FULL_LENGTH'&allowMultiQueries=true&nullDatabaseMeansCurrent=true", 
 			"root", 
-			"mysql");
+			"mysql",
+			"Rdb2RdfTest",
+			null);
 	
 	/**
 	 * Returns the list of parameters created automatically from RDB2RDF manifest files

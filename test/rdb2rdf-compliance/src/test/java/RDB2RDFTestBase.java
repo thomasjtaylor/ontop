@@ -469,8 +469,7 @@ public abstract class RDB2RDFTestBase {
 			if (outputExpected) {
 				expected = Rio.parse(stream(outputFile), BASE_IRI, Rio.getParserFormatForFileName(outputFile).get());
 			}
-			String msgx = failureMessage(expected, actual);
-			System.out.println(msgx);
+
 			if (!Models.isomorphic(expected, actual)) {
 				String msg = failureMessage(expected, actual);
 				System.out.println(msg);
