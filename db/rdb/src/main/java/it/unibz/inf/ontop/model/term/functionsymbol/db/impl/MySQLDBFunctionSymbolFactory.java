@@ -267,7 +267,7 @@ public class MySQLDBFunctionSymbolFactory extends AbstractSQLDBFunctionSymbolFac
                 ImmutableList.of(abstractRootDBType, abstractRootDBType), dbBooleanType, false,
                 (terms, termConverter, termFactory) -> String.format(
                         // NB: BINARY is for making it case sensitive & CAST necessary since v8.0.22
-                        "(CAST(%s AS BINARY) REGEXP BINARY %s)",
+                        "(CAST(%s AS BINARY) REGEXP %s)",
                         termConverter.apply(terms.get(0)),
                         termConverter.apply(terms.get(1))));
     }
@@ -292,7 +292,7 @@ public class MySQLDBFunctionSymbolFactory extends AbstractSQLDBFunctionSymbolFac
             switch (flags) {
                 // Case sensitive
                 case "":
-                    return String.format("(CAST(%s AS BINARY) REGEXP BINARY %s)", string, pattern);
+                    return String.format("(CAST(%s AS BINARY) REGEXP %s)", string, pattern);
                 // Case insensitive
                 case "i":
                     // TODO: is it robust to collation?
@@ -330,107 +330,85 @@ public class MySQLDBFunctionSymbolFactory extends AbstractSQLDBFunctionSymbolFac
     @Override
     protected String serializeCheckAndConvertDouble(ImmutableList<? extends ImmutableTerm> terms,
                                                     Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
-        if (isMySQLVersion8OrAbove()) {
-            return String.format("CASE WHEN %1$s NOT REGEXP " + numericPattern +
-                            " THEN NULL ELSE CAST(%1$s + 0.0 AS DOUBLE) END",
-                    term); }
-        else {
-            return String.format("CASE WHEN %1$s NOT REGEXP BINARY " + numericPattern +
-                            " THEN NULL ELSE %1$s + 0.0 END",
-                    term); }
+        String resultQuery = isMySQLVersion8OrAbove()
+                ? "CAST(%1$s + 0.0 AS DOUBLE)"
+                : "%1$s + 0.0";
+        return String.format("CASE WHEN %1$s NOT REGEXP " + numericPattern +
+                        " THEN NULL ELSE " + resultQuery + " END",
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
     protected String serializeCheckAndConvertFloat(ImmutableList<? extends ImmutableTerm> terms,
                                                    Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
-        if (isMySQLVersion8OrAbove()) {
-            return String.format("CASE WHEN %1$s NOT REGEXP " + numericPattern +
-                            " THEN NULL ELSE CAST(%1$s + 0.0 AS FLOAT) END",
-                    term);
-        } else {
-            return String.format("CASE WHEN %1$s NOT REGEXP BINARY " + numericPattern +
-                            " THEN NULL ELSE %1$s + 0.0 END",
-                    term);
-        }
+        String resultQuery = isMySQLVersion8OrAbove()
+            ? "CAST(%1$s + 0.0 AS FLOAT)"
+            : "%1$s + 0.0";
+        return String.format("CASE WHEN %1$s NOT REGEXP " + numericPattern +
+                        " THEN NULL ELSE " + resultQuery + " END",
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
     protected String serializeCheckAndConvertFloatFromNonFPNumeric(ImmutableList<? extends ImmutableTerm> terms,
                                                                    Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
+        String resultQuery = isMySQLVersion8OrAbove()
+            ? "CAST(%1$s + 0.0 AS FLOAT)"
+            : "%1$s + 0.0";
         return String.format("CASE WHEN (CAST(%1$s AS DECIMAL(60,30)) NOT BETWEEN -3.40E38 AND -1.18E-38 AND " +
                         "CAST(%1$s AS DECIMAL(60,30)) NOT BETWEEN 1.18E-38 AND 3.40E38 AND CAST(%1$s AS DECIMAL(60,30)) != 0) THEN NULL " +
-                        "ELSE CAST(%1$s + 0.0 AS FLOAT) END",
-                term);
+                        "ELSE " + resultQuery + " END",
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
     protected String serializeCheckAndConvertDecimal(ImmutableList<? extends ImmutableTerm> terms,
                                                      Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
-        if (isMySQLVersion8OrAbove()) {
-            return String.format("CASE WHEN %1$s NOT REGEXP " + numericNonFPPattern +
-                            " THEN NULL ELSE CAST(%1$s AS DECIMAL(60,30)) END",
-                    term);
-        } else {
-            return String.format("CASE WHEN %1$s NOT REGEXP BINARY " + numericNonFPPattern +
-                            " THEN NULL ELSE CAST(%1$s AS DECIMAL(60,30)) END",
-                    term);
-        }
+        return String.format("CASE WHEN %1$s NOT REGEXP " + numericNonFPPattern +
+                        " THEN NULL ELSE CAST(%1$s AS DECIMAL(60,30)) END",
+                termConverter.apply(terms.get(0)));
     }
 
     // SIGNED as a datatype cast truncates scale. This workaround addresses the issue.
     @Override
     protected String serializeCheckAndConvertInteger(ImmutableList<? extends ImmutableTerm> terms,
                                                      Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
-        if (isMySQLVersion8OrAbove()) {
-            return String.format("IF(%1$s REGEXP '[^0-9]+$', NULL , " +
-                            "FLOOR(ABS(CAST(%1$s AS DECIMAL(60,30))))  * SIGN(CAST(%1$s AS DECIMAL(60,30)))) ",
-                    term);
-        } else {
-            return String.format("IF(%1$s REGEXP '[^0-9]+$', %1$s RLIKE(if(1=1,')','a')) , " +
-                            "FLOOR(ABS(CAST(%1$s AS DECIMAL(60,30)))) * SIGN(CAST(%1$s AS DECIMAL(60,30)))) ",
-                    term);
-        }
+        return String.format("CASE WHEN %1$s REGEXP '[^0-9]+$' " +
+                        "THEN NULL ELSE FLOOR(ABS(CAST(%1$s AS DECIMAL(60,30)))) * SIGN(CAST(%1$s AS DECIMAL(60,30))) END",
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
     protected String serializeCheckAndConvertIntegerFromBoolean(ImmutableList<? extends ImmutableTerm> terms,
                                                                 Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
         return String.format("CASE WHEN %1$s='1' THEN 1 " +
                         "WHEN UPPER(%1$s) LIKE 'TRUE' THEN 1 " +
                         "WHEN %1$s='0' THEN 0 " +
                         "WHEN UPPER(%1$s) LIKE 'FALSE' THEN 0 " +
                         "ELSE NULL " +
                         "END",
-                term);
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
     protected String serializeCheckAndConvertBoolean(ImmutableList<? extends ImmutableTerm> terms,
                                                      Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
         return String.format("(CASE WHEN CAST(%1$s AS DECIMAL(60,30)) = 0 THEN 'false' " +
                         "WHEN %1$s = '' THEN 'false' " +
                         "WHEN %1$s = 'NaN' THEN 'false' " +
                         "ELSE 'true' " +
                         "END)",
-                term);
+                termConverter.apply(terms.get(0)));
     }
 
     // TRIM removes trailing 0-s
     @Override
     protected String serializeCheckAndConvertStringFromDecimal(ImmutableList<? extends ImmutableTerm> terms,
                                                                Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
         return String.format("TRIM(CASE WHEN MOD(%1$s,1) = 0 THEN CAST((%1$s) AS DECIMAL) " +
                         "ELSE %1$s " +
-                        "END)+0",
-                term);
+                        "END)  + 0",
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
@@ -442,22 +420,12 @@ public class MySQLDBFunctionSymbolFactory extends AbstractSQLDBFunctionSymbolFac
     @Override
     protected String serializeCheckAndConvertDateFromString(ImmutableList<? extends ImmutableTerm> terms,
                                                             Function<ImmutableTerm, String> termConverter, TermFactory termFactory) {
-        String term = termConverter.apply(terms.get(0));
-        if (isMySQLVersion8OrAbove()) {
-            return String.format("CASE WHEN (%1$s NOT REGEXP " + datePattern1 + " AND " +
-                            "%1$s NOT REGEXP " + datePattern2 +" AND " +
-                            "%1$s NOT REGEXP " + datePattern3 +" AND " +
-                            "%1$s NOT REGEXP " + datePattern4 +" ) " +
-                            " THEN NULL ELSE CAST(%1$s AS DATE) END",
-                    term);
-        } else {
-            return String.format("CASE WHEN (%1$s NOT REGEXP BINARY " + datePattern1 + " AND " +
-                            "%1$s NOT REGEXP BINARY " + datePattern2 +" AND " +
-                            "%1$s NOT REGEXP BINARY " + datePattern3 +" AND " +
-                            "%1$s NOT REGEXP BINARY " + datePattern4 +" ) " +
-                            " THEN NULL ELSE CAST(%1$s AS DATE) END",
-                    term);
-        }
+        return String.format("CASE WHEN (%1$s NOT REGEXP " + datePattern1 + " AND " +
+                        "%1$s NOT REGEXP " + datePattern2 +" AND " +
+                        "%1$s NOT REGEXP " + datePattern3 +" AND " +
+                        "%1$s NOT REGEXP " + datePattern4 +" ) " +
+                        "THEN NULL ELSE CAST(%1$s AS DATE) END",
+                termConverter.apply(terms.get(0)));
     }
 
     @Override
